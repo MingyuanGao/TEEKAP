@@ -16,8 +16,11 @@ sudo apt update -y
 
 
 # 2. Install Intel SGX DCAP Driver
-sudo apt install linux-image-5.13.0-1010-oem
-# Optional: If you intend to run an SGX application that loads an enclave requiring 
+# Mainline kernel release 5.11 or higher includes the SGX in-kernel driver. 
+# The in-kernel driver requires the platform to support and to be configured for Flexible Launch Control (FLC).
+sudo apt install -y linux-image-5.13.0-1010-oem
+
+# If you intend to run an SGX application that loads an enclave requiring 
 # the Provision Key Access, the user needs to be added to the group "sgx_prv". 
 # Applications that obtain a quote from the DCAP Quote Generation library for the 
 # purposes of remote attestation may require Provision Key Access.
@@ -34,13 +37,14 @@ sudo apt purge -y az-dcap-client
 sudo apt install -y libsgx-dcap-default-qpl 
 # Create a soft link (named libdcap_quoteprov.so) to libdcap_quoteprov.so.x.yy.zzz.v 
 # TODO: get the version number automatically
+libdcap_qpl_version=1.11.101.1
 pushd /usr/lib/x86_64-linux-gnu
 sudo rm -f libdcap_quoteprov.so
-sudo ln -s libdcap_quoteprov.so.1.11.100.2 libdcap_quoteprov.so
+sudo ln -s libdcap_quoteprov.so.$libdcap_qpl_version libdcap_quoteprov.so
 popd 
 # Configure the qpl 
 echo -e "\n=========================================================================================="
-echo -e "1. Please double-check libdcap_quoteprov.so.1.11.100.2 matches \n   the version in /usr/lib/x86_64-linux-gnu"
+echo -e "1. Please double-check libdcap_quoteprov.so.$libdcap_qpl_version matches \n   the version in /usr/lib/x86_64-linux-gnu"
 echo -e "2. Please configure the qpl: /etc/sgx_default_qcnl.conf"
 echo -e "     PCCS_URL=https://10.0.0.80:8081/sgx/certification/v3/"
 echo -e "     USE_SECURE_CERT=FALSE"

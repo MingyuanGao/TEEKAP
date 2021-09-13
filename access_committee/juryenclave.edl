@@ -42,6 +42,21 @@ enclave {
         public int process_encrypted_message(  [in, count=size] uint8_t* data,
                                                size_t  size);
 
+
+		// Encrypt message for another enclave using the shared traffic key (i.e., AES key)
+        public int encrypt_message_aes( [in, size = ptext_size] uint8_t* ptext,
+		                            	size_t ptext_size,
+									    [out] uint8_t** ctext, 
+									    [out] size_t*  ctext_size);
+		
+
+		// Decrypt message from another enclave using the shared traffic key (i.e., AES key)
+		// NOTE: Testing only
+        public int decrypt_message_aes( [in, size = ctext_size] uint8_t* ctext,
+		                            	size_t ctext_size,
+									    [out] uint8_t** ptext, 
+									    [out] size_t*  ptext_size);
+
 	};
 
     //untrusted {

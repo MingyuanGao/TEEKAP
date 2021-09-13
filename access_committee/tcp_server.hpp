@@ -475,6 +475,7 @@ void Session::handle_connection( int server_id, int http_port) {
 	} // end of "if(request == req_key_share)
 
 	// ##############################################################	
+	// Testing code for encrytion, both asymmetric and symmetric 
 	if(request == req_send_ciphertext) {
 		string ciphertext_hex_str;
 		access_stream >> ciphertext_hex_str;
@@ -482,17 +483,41 @@ void Session::handle_connection( int server_id, int http_port) {
 		std::vector<uint8_t> ciphertext_vec = hex_string_to_uint8_vec(ciphertext_hex_str);
     	encrypted_message_size = ciphertext_vec.size();
     	encrypted_message = &ciphertext_vec[0];
+	
+		/// Testing asymmetric encryption 
+	//	result = process_encrypted_message( enclave_b, &ret, encrypted_message, encrypted_message_size);
+	//    if ((result != OE_OK) || (ret != 0))
+	//    {
+	//        printf("Host: process_encrypted_message failed. %s", oe_result_str(result));
+	//        if (ret == 0)
+	//            ret = 1;
+	//		
+	//		free(encrypted_message);
+	//    }
 		
-		result = process_encrypted_message( enclave_b, &ret, encrypted_message, encrypted_message_size);
-	    if ((result != OE_OK) || (ret != 0))
-	    {
-	        printf("Host: process_encrypted_message failed. %s", oe_result_str(result));
-	        if (ret == 0)
-	            ret = 1;
-			
-			free(encrypted_message);
-	    }
-		
+		/// Testing symmetric encryption
+		uint8_t* rtext;
+    	size_t   rtext_size;
+    	result = decrypt_message_aes(
+    	    enclave_b,
+    	    &ret,
+    	    encrypted_message,
+    	    encrypted_message_size,
+    	    &rtext,
+    	    &rtext_size);
+    	if ((result != OE_OK) || (ret != 0))
+    	{
+    	    printf( "Host: decrypt_message_ase() failed. %s\n", oe_result_str(result));
+    		cout << "Host: veriry enclave-to-enclave traffic key failed!" << endl;
+    	    if (ret == 0) {
+            	ret = 1;
+			}
+    	} else {
+    		string rtext_hex_str = uint8_to_hex_string( rtext, rtext_size);
+    		cout << "Host: rtext_hex_str = " << rtext_hex_str << endl;
+    		cout << "Host: veriry enclave-to-enclave traffic key succeeded!" << endl;
+		}
+
 		if(ret == 0) {
 			access_stream >> status_ok;
 		} else {
@@ -501,7 +526,6 @@ void Session::handle_connection( int server_id, int http_port) {
 		
 		access_stream.flush();
 	} // end of "if(request == req_send_ciphertext)"
-
 
 }
 

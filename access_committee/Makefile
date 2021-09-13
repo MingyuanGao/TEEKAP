@@ -35,7 +35,7 @@ prerequisite:
 	make -C host
 
 $(app_name): $(app_objs)
-	g++ -o $@ $^ $(app_libs) $(OE_LDFLAGS)
+	$(CXX) -o $@ $^ $(app_libs) $(OE_LDFLAGS)
 
 main.o: main.cpp tcp_server.hpp raft_server.hpp
 	$(CXX) -c -fPIE  $(CXXFLAGS) $(OE_CXXFLAGS) $(INCLUDES) -std=c++17 $<
@@ -48,16 +48,16 @@ $(enclave_name):
 ###############################
 # Rules
 %.o : %.c
-	gcc $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o : %.cpp
-	g++ $(CXXFLAGS)  -c $< -o $@
+	$(CXX) $(CXXFLAGS)  -c $< -o $@
 
 %.o : %.cxx
-	g++ $(CXXFLAGS)  -c $< -o $@
+	$(CXX) $(CXXFLAGS)  -c $< -o $@
 
 %.o : %.cc
-	g++ $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 
 ###############################

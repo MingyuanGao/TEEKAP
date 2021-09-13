@@ -17,14 +17,26 @@
 #include <sstream>
 
 #include <mbedtls/aes.h>
+#include <mbedtls/aes.h>
+#include <mbedtls/config.h>
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/error.h>
+#include <mbedtls/md.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/pkcs5.h>
+#include <mbedtls/rsa.h>
+#include <mbedtls/sha256.h>
+
 
 static const unsigned int KEY_SIZE = 32;
 static const unsigned int BLOCK_SIZE = 16;
 using byte = unsigned char;
-using bytes = std::vector<byte>;
 
 std::string uint8_to_hex_string(const uint8_t *v, const size_t s);
+std::vector<uint8_t> hex_string_to_uint8_vec(const string& hex);
 
+int generate_enclave_to_enclave_traffic_key(string password);
 
 ecall_dispatcher::ecall_dispatcher(
     const char* name,
@@ -154,8 +166,9 @@ int ecall_dispatcher::get_evidence_with_public_key(
     size_t evidence_size = 0;
     uint8_t* key_buffer = nullptr;
     int ret = 1;
-
-    TRACE_ENCLAVE("get_evidence_with_public_key");
+	
+    
+	TRACE_ENCLAVE("get_evidence_with_public_key");
     if (m_initialized == false)
     {
         TRACE_ENCLAVE("ecall_dispatcher initialization failed.");
@@ -228,9 +241,13 @@ int ecall_dispatcher::verify_evidence_and_set_public_key(
     uint8_t* evidence,
     size_t evidence_size)
 {
-    int ret = 1;
-
-    if (m_initialized == false)
+	string my_password;
+    string key_hex_str;
+    std::vector<uint8_t> key_vec;
+    
+	int ret = 1;
+    
+	if (m_initialized == false)
     {
         TRACE_ENCLAVE("ecall_dispatcher initialization failed.");
         goto exit;
@@ -248,6 +265,22 @@ int ecall_dispatcher::verify_evidence_and_set_public_key(
 
     ret = 0;
     TRACE_ENCLAVE("verify_evidence_and_set_public_key succeeded.");
+	
+	/* Generate an enclave-to-enclave traffic key
+	 * This key should be generated from a shared secret in both enclaves, resulting in 
+	 * the same encryption key.
+	 *
+	 * Alternatively, this key is to be received from the remote enclave securely
+	 * if communication is not a bottleneck. 
+	 */
+	//string my_password("JuryEnclave.signed");
+	//my_password = "JuryEnclave.signed";
+	//generate_enclave_to_enclave_traffic_key(my_password);
+
+	// For now, we simply hardcode a fixed key in both enclaves
+    key_hex_str = "90c530604134663d3f58c4a39a21c07e82498d0131522cccdf5ac8b2f9288f0a";
+    key_vec = hex_string_to_uint8_vec(key_hex_str);
+    memcpy(&password_key[0], &key_vec[0], key_vec.size());
 
 exit:
     return ret;
@@ -351,6 +384,186 @@ exit:
     return ret;
 }
 
+
+// TODO: use a proper aes_encryption_header_t to reduce duplicated code 
+//       Design a good padding scheme
+int ecall_dispatcher::encrypt_message_aes(uint8_t* ptext, size_t ptext_size, uint8_t** ctext, size_t* ctext_size) {
+    string ptext_hex_str = uint8_to_hex_string(ptext, ptext_size);
+	string password_key_hex_str = uint8_to_hex_string(password_key, sizeof(password_key) );
+ 	string iv_hex_str;
+	string ctext_hex_str;
+	TRACE_ENCLAVE("encrypt_message_aes: ptext (hex) = %s", ptext_hex_str.c_str() );
+    TRACE_ENCLAVE("encrypt_message_aes: AES key (hex) = %s", password_key_hex_str.c_str());
+
+
+	uint8_t* ptext_buffer;
+	uint8_t* ctext_buffer;
+	uint8_t* host_buffer;
+	int remainder;
+
+	int ret = 1;
+    if (m_initialized == false)
+    {
+        TRACE_ENCLAVE("ecall_dispatcher initialization failed");
+        goto exit;
+    }
+	
+	remainder = ptext_size % BLOCK_SIZE;
+	if( remainder == 0 ) {
+		ptext_buffer = (uint8_t*)oe_malloc(ptext_size);
+		ctext_buffer = (uint8_t*)oe_malloc(ptext_size);
+	} else {
+		ptext_buffer = (uint8_t*)oe_malloc(ptext_size + BLOCK_SIZE);
+		ctext_buffer = (uint8_t*)oe_malloc(ptext_size + BLOCK_SIZE);
+	}
+	if (ptext_buffer == nullptr || ctext_buffer == nullptr )
+    {
+        ret = OE_OUT_OF_MEMORY;
+        TRACE_ENCLAVE("allocating ptext_buffer or ctext_buffer failed, out of memory");
+        goto exit;
+    }
+	memcpy(&ptext_buffer[0], &ptext[0], ptext_size);
+
+
+	host_buffer = (uint8_t*)oe_host_malloc(ptext_size+BLOCK_SIZE); // + iv_size
+    if (host_buffer == nullptr)
+    {
+        ret = OE_OUT_OF_MEMORY;
+        TRACE_ENCLAVE("allocating host_buffer failed, out of memory");
+        goto exit;
+    }
+
+
+	byte iv[BLOCK_SIZE];	
+	// TODO: generate random bytes into iv
+    memcpy(&host_buffer[0], &iv[0], BLOCK_SIZE);
+	iv_hex_str = uint8_to_hex_string(iv, sizeof(iv) );
+    TRACE_ENCLAVE("encrypt_message_aes: iv (hex) = %s", iv_hex_str.c_str());
+
+	
+	mbedtls_aes_context aes;
+	mbedtls_aes_setkey_enc( &aes, password_key, KEY_SIZE*8); // key size is 256 bits
+	
+	if(remainder == 0) {
+		mbedtls_aes_crypt_cbc( &aes, MBEDTLS_AES_ENCRYPT,
+        	ptext_size, // input data length in bytes,
+        	iv,         // Initialization vector (updated after use)
+        	&ptext_buffer[0],  // input  
+			&ctext_buffer[0] ); // output
+	} else {
+		mbedtls_aes_crypt_cbc( &aes, MBEDTLS_AES_ENCRYPT,
+        	ptext_size+BLOCK_SIZE, // input data length in bytes,
+        	iv,         // Initialization vector (updated after use)
+        	&ptext_buffer[0],  // input  
+			&ctext_buffer[0] ); // output
+	}
+
+	
+	memcpy(&host_buffer[BLOCK_SIZE], &ctext_buffer[0], ptext_size);
+	*ctext = host_buffer;
+    *ctext_size = ptext_size + BLOCK_SIZE; // ptext_size + iv_size
+	
+	ctext_hex_str = uint8_to_hex_string(host_buffer, ptext_size+BLOCK_SIZE);
+	TRACE_ENCLAVE("encrypt_message_aes: ctext_size = %ld", ptext_size + BLOCK_SIZE);
+	TRACE_ENCLAVE("encrypt_message_aes: ctext = %s \n", ctext_hex_str.c_str() );
+ 
+    ret = 0;
+exit:
+    return ret;					
+}
+
+
+// For testing only
+int ecall_dispatcher::decrypt_message_aes(uint8_t* ctext, size_t ctext_size, uint8_t** ptext, size_t* ptext_size) {
+    string ctext_hex_str = uint8_to_hex_string(ctext, ctext_size);
+	string password_key_hex_str = uint8_to_hex_string(password_key, sizeof(password_key) );
+ 	string iv_hex_str;
+	string ptext_hex_str;
+	TRACE_ENCLAVE("encrypt_message_aes: ctext (hex) = %s", ctext_hex_str.c_str() );
+    TRACE_ENCLAVE("encrypt_message_aes: AES key (hex) = %s", password_key_hex_str.c_str());
+
+
+	uint8_t* ctext_buffer;
+	uint8_t* ptext_buffer;
+	uint8_t* host_buffer;
+	int remainder;
+
+	int ret = 1;
+    if (m_initialized == false)
+    {
+        TRACE_ENCLAVE("ecall_dispatcher initialization failed");
+        goto exit;
+    }
+
+	
+	byte iv[BLOCK_SIZE];	
+	memcpy(&iv[0], &ctext[0], BLOCK_SIZE);
+	iv_hex_str = uint8_to_hex_string(iv, sizeof(iv) );
+    TRACE_ENCLAVE("decrypt_message_aes: iv (hex) = %s", iv_hex_str.c_str());
+
+	
+	ctext_buffer = (uint8_t*)oe_malloc(ctext_size); // ctext_size - iv_size + (possible) BLOCK_SIZE
+    if (ctext_buffer == nullptr)
+    {
+        ret = OE_OUT_OF_MEMORY;
+        TRACE_ENCLAVE("allocating ctext_buffer failed, out of memory");
+        goto exit;
+    }
+	remainder = (ctext_size - BLOCK_SIZE) % BLOCK_SIZE;
+	if(remainder == 0) {
+		memcpy(&ctext_buffer[0], &ctext[BLOCK_SIZE], ctext_size - BLOCK_SIZE);
+	} else {
+		memcpy(&ctext_buffer[0], &ctext[BLOCK_SIZE], ctext_size);
+	}
+
+
+	ptext_buffer = (uint8_t*)oe_malloc(ctext_size - BLOCK_SIZE); // - iv_size
+    if (ptext_buffer == nullptr)
+    {
+        ret = OE_OUT_OF_MEMORY;
+        TRACE_ENCLAVE("allocating ptext_buffer failed, out of memory");
+        goto exit;
+    }
+	
+	host_buffer = (uint8_t*)oe_host_malloc(ctext_size - BLOCK_SIZE); // -iv_size
+    if (host_buffer == nullptr)
+    {
+        ret = OE_OUT_OF_MEMORY;
+        TRACE_ENCLAVE("allocating host_buffer failed, out of memory");
+        goto exit;
+    }
+	
+
+	mbedtls_aes_context aes;
+	mbedtls_aes_setkey_dec( &aes, password_key, KEY_SIZE*8); // key size is 256 bits
+	if(remainder == 0) {
+		mbedtls_aes_crypt_cbc( &aes, MBEDTLS_AES_DECRYPT,
+    	    ctext_size - BLOCK_SIZE, // input data length in bytes,
+    	    iv,                  // Initialization vector (updated after use)
+    	    &ctext_buffer[0], 
+			&ptext_buffer[0]);
+	} else {
+		mbedtls_aes_crypt_cbc( &aes, MBEDTLS_AES_DECRYPT,
+    	    ctext_size, // input data length in bytes, i.e., ctext_size - BLOCK_SIZE + BLOCK_SIZE 
+    	    iv,                  // Initialization vector (updated after use)
+    	    &ctext_buffer[0], 
+			&ptext_buffer[0]);
+	}
+
+	
+	memcpy(&host_buffer[0], &ptext_buffer[0], ctext_size - BLOCK_SIZE);
+ 	
+	ptext_hex_str = uint8_to_hex_string(ptext_buffer, ctext_size-BLOCK_SIZE);
+	TRACE_ENCLAVE("decrypt_message_aes: ptext_size = %ld", ctext_size - BLOCK_SIZE );
+	TRACE_ENCLAVE("decrypt_message_aes: ptext = %s", ptext_hex_str.c_str() );
+   
+	*ptext = host_buffer;
+    *ptext_size = ctext_size - BLOCK_SIZE;
+    ret = 0;
+exit:
+    return ret;					
+}
+
 // Load data capsule file into enclave
 int ecall_dispatcher::load_data_capsule(
     uint8_t* encrypted_data,
@@ -372,7 +585,8 @@ int ecall_dispatcher::load_data_capsule(
     }
 	
 	memcpy(data_capsule_buffer, encrypted_data, encrypted_data_size);
-	
+	data_capsule_buffer_size = encrypted_data_size;
+
 	TRACE_ENCLAVE("\nDataUserEnclave: Loaded data capsule into enclave!");
     ret = 0;
 exit:
@@ -422,31 +636,38 @@ int ecall_dispatcher::consume_data() {
     TRACE_ENCLAVE("\nDataUserEnclave: Decrypting the data capsule ...\n");
 	
 	byte key[KEY_SIZE];
-	memcpy(key, restored, KEY_SIZE);
+	memcpy(&key[0], restored, KEY_SIZE);
 	
-	// TODO: write the mbedtls equivalent of aes_decrypt() 
-//	byte iv[BLOCK_SIZE];	
-//	memcpy(&iv[0], &data_capsule_buffer[0], BLOCK_SIZE);
-//	
-//	size_t data_size = data_capsule_buffer_size - BLOCK_SIZE;
-//	bytes ctext(data_size);
-//	memcpy((byte*)&ctext[0], &data_capsule_buffer[BLOCK_SIZE], data_size);
-//  
-//	bytes rtext;
-//	//aes_decrypt(key,iv,ctext,rtext);
-//	
-//	mbedtls_aes_context aes;
-//	mbedtls_aes_setkey_dec( &aes, key, KEY_SIZE);
-//	mbedtls_aes_crypt_cbc( &aes,
-//		MBEDTLS_AES_DECRYPT,
-//        data_size,           // input data length in bytes,
-//        iv, // Initialization vector (updated after use)
-//        &ctext[0],
-//        &rtext[0]);
+	byte iv[BLOCK_SIZE];	
+	memcpy(&iv[0], &data_capsule_buffer[0], BLOCK_SIZE);
 	
-    TRACE_ENCLAVE("\nDataUserEnclave: Decrypted the data capsule!\n");
+	size_t data_size = data_capsule_buffer_size - BLOCK_SIZE;
+	byte ctext[data_size];
+	memcpy(&ctext[0], &data_capsule_buffer[BLOCK_SIZE], data_size);
+
+	byte rtext[data_size];
+
+	mbedtls_aes_context aes;
+	mbedtls_aes_setkey_dec( &aes, key, KEY_SIZE*8); // key size is 256 bits
+	mbedtls_aes_crypt_cbc( &aes, MBEDTLS_AES_DECRYPT,
+        data_size,           // input data length in bytes,
+        iv, // Initialization vector (updated after use)
+        ctext, 
+		rtext);
+
+	TRACE_ENCLAVE("\nDataUserEnclave: Decrypted the data capsule!\n");
+
+    TRACE_ENCLAVE("\nDataUserEnclave: Secret data is : (for demo only) \n--------------------------------------------------\n");
+	
+	for(int i = 0; i < data_size; i++) {
+		printf("%c", (char)rtext[i]);
+	}
+    
     TRACE_ENCLAVE("\nDataUserEnclave: Consuming the data ...\n");
-    TRACE_ENCLAVE("\nDataUserEnclave: Done!\n");
+   	// Data-conuming code goes here	
+	// ...	
+
+	TRACE_ENCLAVE("\nDataUserEnclave: Done!\n");
 
 	return 0;
 }
@@ -462,5 +683,133 @@ std::string uint8_to_hex_string(const uint8_t *v, const size_t s) {
    }
  
    return ss.str();
- }
+}
 
+
+#define HASH_VALUE_SIZE_IN_BYTES 32 // sha256 hashing algorithm
+#define ENCRYPTION_KEY_SIZE 256     // AES256-CBC encryption algorithm
+#define ENCRYPTION_KEY_SIZE_IN_BYTES (ENCRYPTION_KEY_SIZE / 8)
+#define IV_SIZE 16 // determined by AES256-CBC
+#define SALT_SIZE_IN_BYTES IV_SIZE
+
+// This routine uses the mbed_tls library to derive an AES key from the input
+// password, producing a password-based key.
+// NOTE: This key is used as the enclave-to-enclave traffice key
+int generate_password_key(const char* password, unsigned char* salt, unsigned char* key, unsigned int key_size)
+{
+    mbedtls_md_context_t sha_ctx;
+    const mbedtls_md_info_t* info_sha;
+    int ret = 0;
+    mbedtls_md_init(&sha_ctx);
+
+    TRACE_ENCLAVE("generate_password_key");
+
+    memset(key, 0, key_size);
+    info_sha = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (info_sha == nullptr)
+    {
+        ret = 1;
+        goto exit;
+    }
+
+    // setting up hash algorithm context
+    ret = mbedtls_md_setup(&sha_ctx, info_sha, 1);
+    if (ret != 0)
+    {
+        TRACE_ENCLAVE("mbedtls_md_setup() failed with -0x%04x", -ret);
+        goto exit;
+    }
+
+    // Derive a key from a password using PBKDF2.
+    // PBKDF2 (Password-Based Key Derivation Function 2) are key derivation
+    // functions with a sliding computational cost, aimed to reduce the
+    // vulnerability of encrypted keys to brute force attacks. See
+    // (https://en.wikipedia.org/wiki/PBKDF2) for more details.
+    ret = mbedtls_pkcs5_pbkdf2_hmac(
+        &sha_ctx,                       // Generic HMAC context
+        (const unsigned char*)password, // Password to use when generating key
+        strlen((const char*)password),  // Length of password
+        salt,                           // salt to use when generating key
+        SALT_SIZE_IN_BYTES,             // size of salt
+        100000,                         // iteration count
+        key_size,                       // length of generated key in bytes
+        key);                           // generated key
+    if (ret != 0)
+    {
+        TRACE_ENCLAVE("mbedtls_pkcs5_pbkdf2_hmac failed with -0x%04x", -ret);
+        goto exit;
+    }
+    TRACE_ENCLAVE("Key based on password successfully generated");
+exit:
+    mbedtls_md_free(&sha_ctx);
+    return ret;
+}
+
+
+int ecall_dispatcher::generate_enclave_to_enclave_traffic_key(string password)
+{
+    int ret = 0;
+    unsigned char digest[HASH_VALUE_SIZE_IN_BYTES]; // sha256 digest of password
+    // This varaible was moved to global variable
+	//unsigned char password_key[ENCRYPTION_KEY_SIZE_IN_BYTES]; // password generated key
+    unsigned char salt[SALT_SIZE_IN_BYTES];
+    const char seed[] = "JuryEnclaveDH-KeyExchange";
+ 	std::string password_key_hex ;
+
+    mbedtls_entropy_context entropy;
+    mbedtls_entropy_init(&entropy);
+    
+    mbedtls_ctr_drbg_context ctr_drbg;
+	mbedtls_ctr_drbg_init(&ctr_drbg);
+
+    // Initialize CTR-DRBG seed
+    ret = mbedtls_ctr_drbg_seed(
+        &ctr_drbg,
+        mbedtls_entropy_func,
+        &entropy,
+        (const unsigned char*)seed,
+        strlen(seed));
+    if (ret != 0)
+    {
+        TRACE_ENCLAVE("mbedtls_ctr_drbg_seed() failed with -0x%04x", -ret);
+        goto exit;
+    }
+
+    // Generate random salt
+    ret = mbedtls_ctr_drbg_random(&ctr_drbg, salt, sizeof(salt));
+    if (ret != 0)
+    {
+        TRACE_ENCLAVE("mbedtls_ctr_drbg_random() failed with -0x%04x", -ret);
+        goto exit;
+    }
+
+    TRACE_ENCLAVE("generate_enclave_to_enclave_traffic_key");
+    
+	// derive a key from the password using PBDKF2
+    ret = generate_password_key(password.c_str(), salt, password_key, sizeof(password_key));
+    if (ret != 0)
+    {
+       TRACE_ENCLAVE("generate_enclave_to_enclave_traffic_key failed!");
+       goto exit;
+    }
+    
+ 	password_key_hex = uint8_to_hex_string(password_key, sizeof(password_key) );
+    TRACE_ENCLAVE("enclave-to-enclave traffic key (hex): %s", password_key_hex.c_str());
+
+exit:
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&entropy);
+    return ret;
+}
+
+std::vector<uint8_t> hex_string_to_uint8_vec(const string& hex) {
+    std::vector<uint8_t> bytes;
+
+    for (unsigned int i = 0; i < hex.length(); i += 2) {
+        string byteString = hex.substr(i, 2);
+        uint8_t byte = (uint8_t) strtol(byteString.c_str(), nullptr, 16);
+        bytes.push_back(byte);
+    }
+
+    return bytes;
+}

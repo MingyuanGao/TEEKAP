@@ -20,6 +20,9 @@ typedef struct _enclave_config_data
     size_t other_enclave_public_key_pem_size;
 } enclave_config_data_t;
 
+
+#define ENCRYPTION_KEY_SIZE 256     // AES256-CBC encryption algorithm
+#define ENCRYPTION_KEY_SIZE_IN_BYTES (ENCRYPTION_KEY_SIZE / 8)
 class ecall_dispatcher
 {
   private:
@@ -29,6 +32,11 @@ class ecall_dispatcher
     string m_name;
     enclave_config_data_t* m_enclave_config;
     unsigned char m_other_enclave_signer_id[32];
+	
+	// enclave-to-enclave traffic key (AES, 256-bit)
+    unsigned char password_key[ENCRYPTION_KEY_SIZE_IN_BYTES]; 
+	int generate_enclave_to_enclave_traffic_key(string password);
+	
 	// data capsule ciphertext
 	uint8_t* data_capsule_buffer;
 	size_t  data_capsule_buffer_size;
@@ -39,6 +47,8 @@ class ecall_dispatcher
   public:
     ecall_dispatcher(const char* name, enclave_config_data_t* enclave_config);
     ~ecall_dispatcher();
+	
+	
     int get_enclave_format_settings(
         const oe_uuid_t* format_id,
         uint8_t** format_settings,
@@ -64,7 +74,11 @@ class ecall_dispatcher
     int process_encrypted_message(
         uint8_t* encrypted_data,
         size_t encrypted_data_size);
-    
+	
+	int encrypt_message_aes(uint8_t* ptext, size_t ptext_size, uint8_t** ctext, size_t* ctext_size);
+
+	int decrypt_message_aes(uint8_t* ctext, size_t ctext_size, uint8_t** ptext, size_t* ptext_size);
+
 	int load_data_capsule(
         uint8_t* encrypted_data,
         size_t encrypted_data_size);

@@ -241,7 +241,11 @@ int main(int argc, char* argv[]) {
 	/*
 	 * With successful attestation on each other, we are ready to exchange
 	 * data between enclaves, securely via asymmetric encryption
+	 *
+	 * A symmetric encryption key is exchanged for traffic encryption
 	 */
+	////////////////////////////////////////////////////////////////	
+	// Testing code
 	////////////////////////////////////////////////////////////////	
 //    uint8_t* encrypted_message = NULL;
 //    size_t encrypted_message_size = 0;
@@ -258,8 +262,59 @@ int main(int argc, char* argv[]) {
 //		return ret;
 //    }
 //
-//	// Encrypting in one enclave and decrypting in another enclave
+//	// Encrypting in one enclave and decrypting in another enclave using asymmetric encryption
 //	string ciphertext_hex_str = uint8_to_hex_string(encrypted_message, encrypted_message_size);
+//	send_ciphertext(access_committee_leader_ip, access_committee_leader_port, ciphertext_hex_str);	
+	
+	////////////////////////////////////////////////////////////////	
+//	string message_str("HelloJuryEnclave");
+//	uint8_t* message = (uint8_t*)message_str.c_str();
+//	size_t   message_size = message_str.size();
+//	uint8_t* ctext;
+//	size_t   ctext_size;
+//
+//	string message_hex_str = uint8_to_hex_string(message, message_size);
+//	cout << "Host: message_hex_str = " << message_hex_str << endl;
+//	result = encrypt_message_aes(
+//        enclave_a,
+//        &ret,
+//		message,
+//		message_size,
+//		&ctext,
+//		&ctext_size);
+//    if ((result != OE_OK) || (ret != 0))
+//    {
+//        printf( "Host: encrypt_message_ase() failed. %s\n", oe_result_str(result));
+//        if (ret == 0)
+//            ret = 1;
+//   		
+//		return ret;
+//	}
+//	string ctext_hex_str = uint8_to_hex_string(ctext, ctext_size);
+//	cout << "Host: ctext_hex_str = " <<  ctext_hex_str << endl;
+//
+//	uint8_t* rtext;
+//	size_t   rtext_size;
+//	result = decrypt_message_aes(
+//        enclave_a,
+//        &ret,
+//		ctext,
+//		ctext_size,
+//		&rtext,
+//		&rtext_size);
+//    if ((result != OE_OK) || (ret != 0))
+//    {
+//        printf( "Host: decrypt_message_ase() failed. %s\n", oe_result_str(result));
+//        if (ret == 0)
+//            ret = 1;
+//   		
+//		return ret;
+//	}
+//	string rtext_hex_str = uint8_to_hex_string( rtext, rtext_size);
+//	cout << "Host: rtext_hex_str = " << rtext_hex_str << endl;
+//     
+//	// Encrypting in one enclave and decrypting in another enclave using symmetric encryption
+//	string ciphertext_hex_str = uint8_to_hex_string(ctext, ctext_size);
 //	send_ciphertext(access_committee_leader_ip, access_committee_leader_port, ciphertext_hex_str);	
 	////////////////////////////////////////////////////////////////	
 	
@@ -269,8 +324,8 @@ int main(int argc, char* argv[]) {
 	 *     r = <dc_id, enclave_evience, nonce>
 	 * 
 	 * Wait for response from Jury leader
-	 * - statu_error -> access denied, or data capsule has expired 
-	 * - status_ok   -> await for at least k key shares from JURY
+	 * - status_error -> access denied, or data capsule has expired 
+	 * - status_ok    -> await for at least k key shares from JURY
 	 */
 	ip::tcp::iostream ac_stream;
     do {
@@ -288,7 +343,7 @@ int main(int argc, char* argv[]) {
 	request["dc_id"] = data_capsule_id;
 	// Jury can extract "mrenclave" from the enclave_evidence 
 	request["evidence"] = requester_enclave_evidence_hex_str;  
-	int nonce = rand() % 100;
+	int nonce = rand();
 	request["nonce"] = std::to_string(nonce);
 
 	ac_stream << req_access_dc << endl;
@@ -327,6 +382,7 @@ int main(int argc, char* argv[]) {
 		cout << "\n==== Host: Loading data capsule into enclave ... " << endl;
 		std::ifstream dc_file(data_capsule_file, std::ios::binary | std::ios::ate);
 	  	std::streamsize dc_file_size = dc_file.tellg();
+		cout << "dc_file_size = " << dc_file_size << endl;
 	  	dc_file.seekg(0, std::ios::beg);
 		std::vector<char> buffer(dc_file_size);
 		if (dc_file.read(buffer.data(), dc_file_size))
@@ -414,21 +470,23 @@ int main(int argc, char* argv[]) {
 		/* 
 		 * Reconstruct the decryption key
 		 */	
-		// Test code on the host side	
-		sss_Share shares[n]; // typedef uint8_t sss_Share[sss_SHARE_LEN]
-		for (int i = 0; i< n; i++) {
-			string key_share_i_hex_str = key_shares_hexstr[i];
-			std::vector<uint8_t> key_share_i_uint8_vec = hex_string_to_uint8_vec(key_share_i_hex_str); 
-			for(int j = 0; j< sss_SHARE_LEN; j++) {
-				shares[i][j] = key_share_i_uint8_vec.at(j);
-			}
-		}
-		// Combine some of the shares to restore the original secret
-		//unsigned char restored[sss_MLEN];
-		int tmp = sss_combine_shares(restored, shares, k);
-		assert(tmp == 0);
-		cout << "Host: Decryption key (HEX): \n" << uint8_to_hex_string(restored, sss_MLEN) << endl;
-		// --------------------------------	
+		//////////////////////////////////
+		/// Testing code on the host side	
+		//////////////////////////////////
+	//	sss_Share shares[n]; // typedef uint8_t sss_Share[sss_SHARE_LEN]
+	//	for (int i = 0; i< n; i++) {
+	//		string key_share_i_hex_str = key_shares_hexstr[i];
+	//		std::vector<uint8_t> key_share_i_uint8_vec = hex_string_to_uint8_vec(key_share_i_hex_str); 
+	//		for(int j = 0; j< sss_SHARE_LEN; j++) {
+	//			shares[i][j] = key_share_i_uint8_vec.at(j);
+	//		}
+	//	}
+	//	// Combine some of the shares to restore the original secret
+	//	//unsigned char restored[sss_MLEN];
+	//	int tmp = sss_combine_shares(restored, shares, k);
+	//	assert(tmp == 0);
+	//	cout << "Host: Decryption key (HEX): \n" << uint8_to_hex_string(restored, sss_MLEN) << endl;
+		//////////////////////////////////
 		
 		cout << "\n==== Host: Requesting DataUserEnclave to reconstruct the decryption key ..." << endl;
 		size_t shares_size = n * sss_SHARE_LEN;
@@ -456,7 +514,9 @@ int main(int argc, char* argv[]) {
 		/* 
 		 * Decrypting the data capsule ...
 		 */	
+		//////////////////////////////////////
 		/// Testing code on the host side	
+		//////////////////////////////////////
 	//	{
 	//	cout << "Host: Decrypting the data capsule ..." << endl; 
 	//  	byte key[KEY_SIZE];
@@ -546,5 +606,3 @@ string thread_func_request_key_share_token(string node_ip, int http_port, string
 	
 	return key_share_with_token.dump();	
 }
-
-

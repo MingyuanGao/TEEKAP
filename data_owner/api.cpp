@@ -669,7 +669,7 @@ void aes_decrypt(
   if (rc != 1)
     throw std::runtime_error("EVP_DecryptInit_ex failed");
 
-  // Recovered text contracts upto BLOCK_SIZE
+  // Recovered text contracts up to BLOCK_SIZE
   rtext.resize(ctext.size());
   int out_len1 = (int)rtext.size();
 

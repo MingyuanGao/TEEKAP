@@ -154,9 +154,9 @@ bool send_ciphertext(string leader_node_ip, int port, string ciphertext_hex_str)
 	ct_stream.flush();
 	
 	string status;
-	ct_stream >> status;
 
 	if(status == status_ok ) {
+		ct_stream.close();
 		return true;
 	} 
 
@@ -193,15 +193,14 @@ bool download_dc_file_from_storage_server(std::string data_capsule_id, std::stri
 	string status;
 	data_stream >> status;
 	//cout << "status = " << status << endl;
-	if(status ==  status_error) {
-		cout << "Failed to download the data capsule file: " << data_capsule_id << endl;	
-		return false;
-	}
 	
-	if(status ==  status_error) {
+	if(status ==  status_ok) {
 		cout << "Downloaded the data capsule file: " << data_capsule_id << endl;	
 		return true;
 	}
+	
+	cout << "Failed to download the data capsule file: " << data_capsule_id << endl;	
+	return false;
 }
 
 

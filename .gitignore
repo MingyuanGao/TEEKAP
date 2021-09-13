@@ -1,3 +1,5 @@
+*.o
+*.a
 scripts/id_rsa
 scripts/id_rsa.pub
 scripts/nodes.list

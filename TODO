@@ -1,1 +1,6 @@
-1. Choose a more efficient serialization library, e.g., Google's Protocol Buffers
+1. Add attested TLS terminating in enclaves
+   An Attested TLS channel is a TLS channel that integrates remote attestation validation as part of the TLS channel establishing process. 
+   Once established, it guarantees that an attested connecting party is running inside a TEE with expected identity.
+2. Unify the AES API accross the project: a common aes_encryption_header_t needs to be defined to reduce code duplication.
+3. Switchless ECall: using *ring buffers* for host-enclave and enclave-host communication
+4. Choose a more efficient serialization library, e.g., Google's Protocol Buffers 

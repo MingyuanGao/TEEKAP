@@ -87,6 +87,20 @@ int process_encrypted_message(uint8_t* data, size_t size)
     return dispatcher.process_encrypted_message(data, size);
 }
 
+// Encrypt message for another enclave using the shared traffic key (i.e., AES key)
+int encrypt_message_aes(uint8_t* ptext, size_t ptext_size,
+	                    uint8_t** ctext, size_t* ctext_size)
+{
+    return dispatcher.encrypt_message_aes(ptext, ptext_size, ctext, ctext_size);
+}
+
+// Decrypt message from another enclave using the shared traffic key (i.e., AES key)
+int decrypt_message_aes(uint8_t* ctext, size_t ctext_size,
+	                    uint8_t** ptext, size_t* ptext_size)
+{
+    return dispatcher.decrypt_message_aes(ctext, ctext_size, ptext, ptext_size);
+}
+
 // Load data capsule
 int load_data_capsule(uint8_t* data, size_t size)
 {
