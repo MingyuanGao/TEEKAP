@@ -1,0 +1,5 @@
+scripts/id_rsa
+scripts/id_rsa.pub
+scripts/nodes.list
+scripts/setup_jury_nodes.sh
+scripts/start_jury_nodes.sh
